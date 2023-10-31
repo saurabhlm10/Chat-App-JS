@@ -8,6 +8,16 @@
         padding-bottom: 3rem;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Helvetica, Arial, sans-serif;
+        display: flex;
+        flex-direction: row;
+      }
+
+      #online-people {
+        width: 20%;
+      }
+
+      #message-section {
+        flex-grow: 1;
       }
 
       #form {
@@ -42,12 +52,14 @@
         color: #fff;
       }
 
-      #messages {
+      #messages,
+      #typing-ul {
         list-style-type: none;
         margin: 0;
         padding: 0;
       }
-      #messages > li {
+      #messages > li,
+      #typing-ul > li {
         padding: 0.5rem 1rem;
       }
       #messages > li:nth-child(odd) {
@@ -56,20 +68,28 @@
     </style>
   </head>
   <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-      <input id="input" autocomplete="off" /><button>Send</button>
-    </form>
+    <ul id="online-people"></ul>
+    <div id="message-section">
+      <ul id="messages"></ul>
+      <ul id="typing-ul"></ul>
+      <form id="form" action="">
+        <input id="input" autocomplete="off" /><button>Send</button>
+      </form>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      var socket = io();
       var username = prompt("Enter Username");
-
-      socket.emit("user connection", username);
+      var socket = io();
 
       var messageDiv = document.getElementById("messages");
       var form = document.getElementById("form");
       var input = document.getElementById("input");
+      var typingUl = document.getElementById("typing-ul");
+      var onlinePeopleUl = document.getElementById("online-people");
+
+      let typingTimeout;
+
+      let onlineUsernamesClient = {};
 
       form.addEventListener("submit", function (e) {
         e.preventDefault();
@@ -86,6 +106,7 @@
             username,
             message: input.value,
           });
+          socket.emit("typing notification off", username);
           input.value = "";
         }
       });
@@ -101,20 +122,105 @@
         window.scrollTo(0, document.body.scrollHeight);
       });
 
-      socket.on("user connection", function (notificationUsername) {
-        console.log("username", username);
-        console.log("notificationUsername", notificationUsername);
-        var notficationItem = document.createElement("li");
-        var notificationText =
-          (username === notificationUsername ? "You" : notificationUsername) +
-          " " +
-          "just connected";
+      socket.emit("user connection", username);
 
-        notficationItem.textContent = notificationText;
-        notficationItem.classList.add("notification");
+      socket.on(
+        "user connection",
+        function ({ username: notificationUsername, onlineUsernames }) {
+          // add to onlineUsernames
 
-        messageDiv.appendChild(notficationItem);
+          onlineUsernamesClient = onlineUsernames;
+
+          while (onlinePeopleUl.firstChild) {
+            onlinePeopleUl.removeChild(onlinePeopleUl.firstChild);
+          }
+
+          Object.keys(onlineUsernamesClient).forEach((onlineUsername) => {
+            if (onlineUsername === username) return;
+            const onlinePeopleItem = document.createElement("li");
+
+            console.log(onlineUsernames[onlineUsername]);
+
+            onlinePeopleItem.textContent = onlineUsername;
+            onlinePeopleItem.id = onlineUsernames[onlineUsername];
+            onlinePeopleUl.appendChild(onlinePeopleItem);
+          });
+
+          // just connected notification
+          var notficationItem = document.createElement("li");
+          var notificationText =
+            (username === notificationUsername ? "You" : notificationUsername) +
+            " " +
+            "just connected";
+
+          notficationItem.textContent = notificationText;
+          notficationItem.classList.add("notification");
+
+          messageDiv.appendChild(notficationItem);
+          window.scrollTo(0, document.body.scrollHeight);
+        }
+      );
+
+      input.addEventListener("input", function (e) {
+        clearTimeout(typingTimeout);
+        socket.emit("typing notification on", username);
+
+        typingTimeout = setTimeout(() => {
+          socket.emit("typing notification off", username);
+        }, 1000);
+      });
+
+      socket.on("typing notification on", function (typingUsername) {
+        var typingUsernameLi = document.getElementById(
+          typingUsername + "-" + "typing"
+        );
+
+        if (typingUsernameLi) return;
+
+        var typingNotificationItem = document.createElement("li");
+
+        var typingNotificationText = typingUsername + " " + "is typing...";
+
+        typingNotificationItem.textContent = typingNotificationText;
+
+        typingNotificationItem.classList.add("typingNotification");
+        typingNotificationItem.id = typingUsername + "-" + "typing";
+
+        typingUl.appendChild(typingNotificationItem);
+
         window.scrollTo(0, document.body.scrollHeight);
+      });
+
+      input.addEventListener("blur", function (e) {
+        socket.emit("typing notification off", username);
+      });
+
+      socket.on("typing notification off", function (typingUsername) {
+        var typingUsernameLi = document.getElementById(
+          typingUsername + "-" + "typing"
+        );
+
+        if (typingUsernameLi) typingUl.removeChild(typingUsernameLi);
+      });
+
+      socket.on("disconnection", (disconnectedUsername) => {
+        // Remove From online people
+
+        console.log("Before", onlineUsernamesClient);
+
+        console.log("After", onlineUsernamesClient);
+
+        console.log("disconnectedUsername", disconnectedUsername);
+
+        console.log(onlineUsernamesClient[disconnectedUsername]);
+
+        var onlinePeopleItem = document.getElementById(
+          onlineUsernamesClient[disconnectedUsername]
+        );
+
+        delete onlineUsernamesClient[disconnectedUsername];
+
+        onlinePeopleUl.removeChild(onlinePeopleItem);
       });
     </script>
   </body>
